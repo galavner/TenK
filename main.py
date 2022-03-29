@@ -16,6 +16,7 @@ if __name__ == '__main__':
     print_hi('PyCharm')
     X = BodyMeasuresLoader().get_data(study_ids=['10k'])
     print("here")
+    print("MB Change!")
 
 
 # See PyCharm help at https://www.jetbrains.com/help/pycharm/
