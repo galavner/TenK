@@ -14,11 +14,11 @@ from scipy import stats
 from LabData.DataLoaders.Loader import Loader
 from LabData.DataLoaders.BodyMeasuresLoader import BodyMeasuresLoader
 
-
-def load_filter_data():
-    df = BodyMeasuresLoader().get_data(study_ids='10K', groupby_reg='first').df # Get only first appointment of 10K
-    df = df.select_dtype(include = np.number) # Take only numerical values for now
-
+#
+# def load_filter_data():
+#     df = BodyMeasuresLoader().get_data(study_ids='10K', groupby_reg='first').df # Get only first appointment of 10K
+#     df = df.select_dtype(include = np.number) # Take only numerical values for now
+#
 
 
 def print_hi(name):
@@ -26,24 +26,28 @@ def print_hi(name):
     print('Hi, {name}')  # Press Ctrl+F8 to toggle the breakpoint.
 
 
-def get_relevant_patient(df, y):
+def get_relevant_patient_per_outcome(df : pd.DataFrame , y):
     # Get DF and a feature, returns the DF with only relevant patient with non-NAN entries in the feature column
     relevant_patients = df[y].notna()#consider only non-NAN patients
     number_of_patients = relevant_patients.sum()
     x = df.iloc[relevant_patients,:]
     return x
 
+
 def remove_nan_columns(x : pd.DataFrame):
 #     Get the features matrix X and removes all columns with large amount of Nans
-#     percent_of_nan = 0.66
-#     columns_to_remove = x.columns
-#     x = x.drop(())
+    percent_of_non_nan = 0.66
+    x = x.dropna(axis = 1, thresh = np.ceil(percent_of_non_nan * len(x)))
+    return x
 
 
-def remove_nan_rows(x,y):
+def remove_nan_rows(x : pd.DataFrame ,y : pd.DataFrame):
 #     remove rows with Nan values in some columns that have not been filtered out by now
+    patients_to_remove = x.notna().sum
 
-def remove_outliers(x,y):
+
+
+def remove_outliers(x : pd.DataFrame ,y):
 #     remove all rows with features valued outside x /sigma
 
 
@@ -62,7 +66,7 @@ if __name__ == '__main__':
     #     print(i)
     #     print(np.abs(stats.zscore(x_numerics_only[i], axis = 0, nan_policy = 'omit')) < 10)
     # # x_ol = x_raw[(np.abs(stats.zscore(x_raw)) < 3).all(axis=1)]
-    # print("here")
+    print("here")
     print("MB Change!")
 
 
