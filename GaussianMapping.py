@@ -1,3 +1,5 @@
+import warnings
+
 import numpy as np
 import pandas as pd
 
@@ -52,6 +54,8 @@ def best_transformer(feature_train: pd.Series, feature_test: pd.Series, alpha):
     for transfomer_name in range(len(sw)):
         if sw[transfomer_name] == max(sw) and sw[transfomer_name] > alpha:
             return train[transfomer_name], test[transfomer_name]
+
+    warnings.warn(f'Could not transform {feature_train.name} into a Gaussian-like distribution')
     return feature_train, feature_test
 
 
@@ -65,9 +69,13 @@ def make_gaussian(x_train: pd.DataFrame, x_test: pd.DataFrame, y_train: pd.Serie
 
 
     for feature in x_train.columns:
+        if shapiro(x_train[feature]) > alpha:
+            continue
+
         x_train_transformed[feature], x_test_transformed[feature] = best_transformer(x_train[feature], x_test[feature], alpha)
 
-    y_train_transformed, y_test_transformed = best_transformer(y_train, y_test, alpha)
+    if not (shapiro(y_train) > alpha):
+        y_train_transformed, y_test_transformed = best_transformer(y_train, y_test, alpha)
 
     return x_train_transformed, x_test_transformed, y_train_transformed, y_test_transformed
 
