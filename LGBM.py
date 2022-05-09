@@ -16,7 +16,7 @@ from LabData import config_global as config
 
 # LightGBM
 lg_boosting_type = 'gbdt'
-lg_objective = 'regression'
+lg_objective = 'regression' # TODO change to classifier accordingly?
 lg_metric = 'l2'
 lg_learning_rate = 0.03
 lg_num_leaves = 31
@@ -36,7 +36,7 @@ lg_silent = True
 hyper_params_dict_lg = \
     {
         'boosting_type': ['gbdt'],
-        'objective': ['regression'],
+        'objective': ['regression'], #can be 'regression', 'binary', 'multiclass'....
         'metric': ['l2'],
         'learning_rate': [0.05, 0.02, 0.01, 0.005, 0.002, 0.001, 0.0005, 0.0002, 0.0001],
         'num_leaves': range(2, 35),
@@ -54,21 +54,6 @@ hyper_params_dict_lg = \
     }
 
 
-#
-# lgb_train = lgb.Dataset(X_train, y_train)
-# lgb_eval = lgb.Dataset(X_test, y_test, reference=lgb_train)
-#
-# gbm = lgb.train(params,
-#                 lgb_train,
-#                 num_boost_round=20,
-#                 valid_sets=lgb_eval,
-#                 callbacks=[lgb.early_stopping(stopping_rounds=5)])
-#
-# y_pred = gbm.predict(X_test, num_iteration=gbm.best_iteration)
-# rmse_test = mean_squared_error(y_test, y_pred) ** 0.5
-# print(f'The RMSE of prediction is: {rmse_test}')
-
-
 def is_classification(y):
     if (y.unique().shape[0] == 2) and ((type(y.unique().max()) == str) |
                                        (y.sort_values().unique() == np.array([0., 1.])).all()):
@@ -77,7 +62,12 @@ def is_classification(y):
 
 
 def fit_hyper_params_search(x, y, classification_problem):
-    lgb_model = lgb.LGBMClassifier() if classification_problem else lgb.LGBMRegressor()
+    if classification_problem:
+        lgb_model = lgb.LGBMClassifier()
+        hyper_params_dict_lg['objective'] = ['binary']
+    else:
+        lgb_model = lgb.LGBMRegressor()
+
     rscv = RandomizedSearchCV(lgb_model, hyper_params_dict_lg)
     rscv.fit(x, y)
     predictor = rscv.best_estimator_
@@ -89,8 +79,8 @@ def calc_shap(model, x):
     explainer = shap.TreeExplainer(model)
     x_shap = x
     shap_values = explainer.shap_values(x_shap)
-    shap_df = DataFrame(columns=x.columns, index=x_shap.index, data=shap_values)
-    return shap_df, explainer
+    # shap_df = DataFrame(columns=x.columns, index=x_shap.index, data=shap_values[0])
+    return explainer
 
 
 def get_prediction(x: DataFrame, model: lgb.LGBMRegressor):
@@ -103,7 +93,7 @@ def evaluate_performance(y_pred, y_test, classification_problem):
     if classification_problem:
         fpr, tpr, thresholds = metrics.roc_curve(y_test, y_pred, pos_label=1)
         precision, recall, _ = precision_recall_curve(y_test, y_pred)
-        result_dict = {
+        results_dict = {
             'prevalence': float(y_test.sum()) / y_test.shape[0],
             'AUC': metrics.auc(fpr, tpr),
             'Precision_Recall': metrics.auc(recall, precision)
@@ -112,10 +102,22 @@ def evaluate_performance(y_pred, y_test, classification_problem):
         results_dict = {
             'Coefficient_of_determination': r2_score(y_true=y_test, y_pred=y_pred),
             'explained_variance_score': explained_variance_score(y_true=y_test, y_pred=y_pred),
-            'pearson_p': pearsonr(y_pred, y_test),
-            'spearman_p': spearmanr(y_pred, y_test)
+            'pearson_r': pearsonr(y_pred, y_test)[0],
+            'pearson_p_value': pearsonr(y_pred,y_test)[1],
+            'spearman_r': spearmanr(y_pred, y_test)[0],
+            'spearman_p_value': spearmanr(y_pred, y_test)[1]
         }
-    return pd.Series(results_dict)
+    return results_dict
+
+def save_files(x_train: pd.DataFrame, x_test: pd.DataFrame, y_train: pd.DataFrame, y_test: pd.DataFrame,
+               y_pred: pd.DataFrame, results_df: pd.DataFrame, model, out_dir):
+    x_train.to_csv(os.path.join(out_dir, 'x_train.csv'))
+    x_test.to_csv(os.path.join(out_dir, 'x_test.csv'))
+    y_train.to_csv(os.path.join(out_dir, 'y_train.csv'))
+    y_test.to_csv(os.path.join(out_dir, 'y_test.csv'))
+    y_pred.to_csv(os.path.join(out_dir, 'y_pred.csv'))
+    results_df.to_csv(os.path.join(out_dir, 'results.csv'))
+    model.booster_.save_model('LGBM_model.txt')
 
 
 
@@ -130,13 +132,21 @@ def LGBMPredict(x: DataFrame, y: DataFrame):
     #     q.startpermanentrun()
     classification_problem = is_classification(y)
     x_train, x_test, y_train, y_test = train_test_split(x, y, test_size=0.2, random_state=0)
-    model = fit_hyper_params_search(x_train, y_train)
-    shap_df, explainer = calc_shap(model, x_test)
-    yhat = get_prediction(x_test, model)
-    result_df = evaluate_performance(yhat, y_test, classification_problem)
-    result_df.to_csv(os.path.join(out_dir, 'results.csv'))
+    model = fit_hyper_params_search(x_train, y_train, classification_problem)
+    # model.booster_.save_model('LGBM_model.txt')
+    explainer = calc_shap(model, x_test)
+    y_pred = get_prediction(x_test, model)
+    results_dict = evaluate_performance(y_pred, y_test, classification_problem)
+
+    y_train = pd.DataFrame(y_train, columns=[y.name], index=x_train.index)
+    y_test = pd.DataFrame(y_test, columns=[y.name], index = x_test.index)
+    y_pred = pd.DataFrame(y_pred, columns=[y.name], index=x_test.index)
+    result_df = pd.DataFrame(results_dict, index=[y.name])
+    # result_df.to_csv(os.path.join(out_dir, 'results.csv'))
+    save_files(x_train, x_test, y_train, y_test, y_pred, result_df, model, out_dir)
     plt.clf()
     shap.summary_plot(explainer.shap_values(x_test), x_test, show=False)
-    plt.savefig('summary_plot.png')
+    plt.savefig('summary_plot.png', bbox_inches='tight')
     print('finish')
+    return x_train, x_test, y_train, y_test, y_pred, model, results_dict
 
