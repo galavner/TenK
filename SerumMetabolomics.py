@@ -111,13 +111,15 @@ def XY_gen_f(x_df, y_col):
 
 
 def Xy_gen_fs():
+    base_path = "/net/mraid08/export/genie/LabData/Analyses/galavner/Predictions/"
 
     with qp(jobname='Gal_LGBM', _delete_csh_withnoerr=True, q=['himem7.q'], _trds_def=2, max_u=200,
                        _mem_def=2) as q:
         q.startpermanentrun()
 
         sm = SerumMetabolomicsLoader().get_data(study_ids='10K', groupby_reg='first', min_col_present=500,
-                                                norm_dist_capping={'sample_size_frac': 0.95, 'clip_sigmas': 5, 'remove_sigmas': 8})
+                                                norm_dist_capping={'sample_size_frac': 0.95, 'clip_sigmas': 5, 'remove_sigmas': 8}
+                                                , precomputed_loader_fname='metab_10k_data_RT_clustering')
         sm_df = sm.df
         # ReIndex s.t. the index is now RegistrationCode, and not SerumName, and only the first value
         sm_df = sm_df.set_index(sm.df_metadata.RegistrationCode.drop_duplicates())
@@ -135,8 +137,10 @@ def Xy_gen_fs():
         # for y_df in df.columns:
 
         tkttores = {}
-        for i, y_col in enumerate(['bt__cpk']):
+        indx = []
+        for i, y_col in enumerate(['bt__lymphocytes_abs', 'bt__monocytes_abs']):
 
+            indx.append(y_col)
             y = y_df[y_col].dropna()
             x = x.reindex(y.index).dropna(how='all')
             y = y.reindex(x.index)
@@ -148,7 +152,7 @@ def Xy_gen_fs():
             # X = df_filtered.loc[:, df_filtered.columns != y_col]
             # Y = df_filtered.loc[:, y_col]
 
-            if x.shape[0] < 500:
+            if x.shape[0] < 1000:
                 continue
 
 
@@ -161,6 +165,13 @@ def Xy_gen_fs():
             tkttores[(i, y_col)] = q.method(LGBM.LGBMPredict, (x, y))
 
             # time.sleep(120)
+        tkttores = {k: q.waitforresult(v) for k, v in tkttores.items()}
+
+        results = pd.DataFrame(tkttores).T
+        results.columns = ['x_train', 'x_test', 'y_train', 'y_test', 'y_pred', 'model', 'results_dict']
+        results.index = indx
+
+        results.to_csv(os.path.join(base_path, 'Results_SerumMetabolomics.csv'))
 
 
 
