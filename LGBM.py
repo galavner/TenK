@@ -109,6 +109,7 @@ def evaluate_performance(y_pred, y_test, classification_problem):
         }
     return results_dict
 
+
 def save_files(x_train: pd.DataFrame, x_test: pd.DataFrame, y_train: pd.DataFrame, y_test: pd.DataFrame,
                y_pred: pd.DataFrame, results_df: pd.DataFrame, model, out_dir):
     x_train.to_csv(os.path.join(out_dir, 'x_train.csv'))
@@ -122,7 +123,7 @@ def save_files(x_train: pd.DataFrame, x_test: pd.DataFrame, y_train: pd.DataFram
 
 
 def LGBMPredict(x: DataFrame, y: DataFrame):
-    base_path = "/net/mraid08/export/genie/LabData/Analyses/galavner/Predictions/"
+    base_path = "/net/mraid08/export/genie/LabData/Analyses/galavner/Predictions/X_SM_age_gender"
     out_dir = os.path.join(base_path, y.name)
     if not os.path.exists(out_dir):
         os.makedirs(out_dir)
@@ -139,7 +140,7 @@ def LGBMPredict(x: DataFrame, y: DataFrame):
     results_dict = evaluate_performance(y_pred, y_test, classification_problem)
 
     y_train = pd.DataFrame(y_train, columns=[y.name], index=x_train.index)
-    y_test = pd.DataFrame(y_test, columns=[y.name], index = x_test.index)
+    y_test = pd.DataFrame(y_test, columns=[y.name], index=x_test.index)
     y_pred = pd.DataFrame(y_pred, columns=[y.name], index=x_test.index)
     result_df = pd.DataFrame(results_dict, index=[y.name])
     # result_df.to_csv(os.path.join(out_dir, 'results.csv'))
