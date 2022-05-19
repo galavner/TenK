@@ -8,7 +8,7 @@ import sys
 import time
 import warnings
 
-
+import pickle
 import numpy as np
 import pandas as pd
 import matplotlib.pyplot as plt
@@ -111,7 +111,7 @@ def XY_gen_f(x_df, y_col):
 
 
 def Xy_gen_fs():
-    base_path = "/net/mraid08/export/genie/LabData/Analyses/galavner/Predictions/"
+    base_path = "/net/mraid08/export/genie/LabData/Analyses/galavner/Predictions/X_SM_age_gender/"
 
     with qp(jobname='Gal_LGBM', _delete_csh_withnoerr=True, q=['himem7.q'], _trds_def=2, max_u=200,
                        _mem_def=2) as q:
@@ -121,16 +121,27 @@ def Xy_gen_fs():
                                                 norm_dist_capping={'sample_size_frac': 0.95, 'clip_sigmas': 5, 'remove_sigmas': 8}
                                                 , precomputed_loader_fname='metab_10k_data_RT_clustering')
         sm_df = sm.df
+        ag_df = sm.df_metadata[['gender', 'age']]
+
+        sm_df['age'] = ag_df['age']
+        sm_df['gender'] = ag_df['gender']
+
         # ReIndex s.t. the index is now RegistrationCode, and not SerumName, and only the first value
         sm_df = sm_df.set_index(sm.df_metadata.RegistrationCode.drop_duplicates())
 
         blood = BloodTestsLoader().get_data(study_ids='10K', groupby_reg='first', min_col_present=500,
                                             norm_dist_capping={'sample_size_frac': 0.95, 'clip_sigmas': 5, 'remove_sigmas': 8})
         blood_df = blood.df
-        x = sm_df
+
+
+
+
+
+
+        x_df = sm_df
         y_df = blood_df
 
-        x = alter_categories(x)
+        x_df = alter_categories(x_df)
         y_df = alter_categories(y_df)
 
         y_df.index = y_df.index.get_level_values('RegistrationCode')
@@ -138,11 +149,11 @@ def Xy_gen_fs():
 
         tkttores = {}
         indx = []
-        for i, y_col in enumerate(['bt__lymphocytes_abs', 'bt__monocytes_abs']):
+        for i, y_col in enumerate(y_df.columns):
 
-            indx.append(y_col)
+
             y = y_df[y_col].dropna()
-            x = x.reindex(y.index).dropna(how='all')
+            x = x_df.reindex(y.index).dropna(how='all')
             y = y.reindex(x.index)
             # df_filtered, num_of_patients = get_relevant_patients_per_outcome(df, y_col)
             # df_filtered = remove_nan_columns(df_filtered)
@@ -163,6 +174,7 @@ def Xy_gen_fs():
 
 
             tkttores[(i, y_col)] = q.method(LGBM.LGBMPredict, (x, y))
+            indx.append(y_col)
 
             # time.sleep(120)
         tkttores = {k: q.waitforresult(v) for k, v in tkttores.items()}
@@ -171,7 +183,11 @@ def Xy_gen_fs():
         results.columns = ['x_train', 'x_test', 'y_train', 'y_test', 'y_pred', 'model', 'results_dict']
         results.index = indx
 
-        results.to_csv(os.path.join(base_path, 'Results_SerumMetabolomics.csv'))
+        results.to_csv(os.path.join(base_path, 'Results.csv'))
+
+        with open(os.path.join(base_path, 'Results_AG_pickle'), 'wb') as f:
+            pickle.dump(results, f)
+
 
 
 
