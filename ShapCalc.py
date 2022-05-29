@@ -44,7 +44,6 @@ def get_n_important_features(mean_shap_calc: pd.DataFrame, n: int = 5):
     return importance.T
 
 
-
 def get_most_important_frequency(most_important: dict):
     freq = {}
     most_important_values = np.array(most_important.values())
