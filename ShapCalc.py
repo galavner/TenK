@@ -35,9 +35,29 @@ def column_abs_mean(df: pd.DataFrame):
     return mean_df
 
 
-def calc_abs_mean_shap(path: os.path):
+def get_n_important_features(mean_shap_calc: pd.DataFrame, n: int = 5):
+    importance = pd.DataFrame()
+    shap_t = mean_shap_calc.T
+    for col in shap_t.columns:
+        ser = pd.Series(shap_t.loc[shap_t.nlargest(5, col).index, col])
+        importance = pd.concat([importance, ser], axis='columns')
+    return importance.T
+
+
+def get_most_important_frequency(most_important: dict):
+    freq = {}
+    most_important_values = np.array(most_important.values())
+    values, count = np.unique(most_important_values, return_counts=True)
+    for i, feature in enumerate(values):
+        if count[i] > 1:
+            freq[feature] = count[i]
+    return freq
+
+
+def calc_abs_mean_shap(path: os.path, n: int = 5):
     data = load_pickle(path)
-    mean_shap_values = pd.DataFrame()
+    indices = []
+    abs_mean_shap_values = pd.DataFrame()
     for i in range(len(data)):
         model = data.model[i]
         x = data.x_test[i]
@@ -46,11 +66,12 @@ def calc_abs_mean_shap(path: os.path):
         shap_values = shapValues(explainer, x)
         shap_df = shapDF(shap_values, x)
         shap_df = column_abs_mean(shap_df)
-        shap_df.name = y[i].columns[0]
+        # shap_df.rename(y.columns[0])
+        indices.append(y.columns[0])
         shap_df = pd.DataFrame(shap_df).T
 
-        mean_shap_values = mean_shap_values.append(shap_df)
-
-    return mean_shap_values
+        abs_mean_shap_values = abs_mean_shap_values.append(shap_df)
+    abs_mean_shap_values.index = indices
+    return abs_mean_shap_values
 
 
