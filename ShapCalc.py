@@ -46,7 +46,6 @@ def get_n_important_features(mean_shap_calc: pd.DataFrame, n: int = 5):
     return importance.T
 
 
-
 def get_most_important_frequency(most_important: pd.DataFrame, freq_threshold: int = 0):
     freq = most_important.count()
     freq = freq[freq > freq_threshold]
