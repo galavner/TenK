@@ -74,3 +74,4 @@ def get_ECGTextLoader():
                              norm_dist_capping={'sample_size_frac': 0.95, 'clip_sigmas': 5,
                                                 'remove_sigmas': 8})
     return ecg
+

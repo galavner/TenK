@@ -75,7 +75,6 @@ def convert_to_np(sr: pd.Series):
 
 
 
-
 def main():
     base_path = "/net/mraid08/export/genie/LabData/Analyses/galavner/Predictions/"
     file_name = 'Results_SM_pickle'
