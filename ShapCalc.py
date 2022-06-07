@@ -5,6 +5,8 @@ import numpy as np
 import pandas as pd
 import shap
 
+import ResultsAnalysis
+
 
 def load_pickle(path: os.path):
     with open(path, 'rb') as f:
@@ -39,19 +41,23 @@ def get_n_important_features(mean_shap_calc: pd.DataFrame, n: int = 5):
     importance = pd.DataFrame()
     shap_t = mean_shap_calc.T
     for col in shap_t.columns:
-        ser = pd.Series(shap_t.loc[shap_t.nlargest(5, col).index, col])
+        ser = pd.Series(shap_t.loc[shap_t.nlargest(n, col).index, col])
         importance = pd.concat([importance, ser], axis='columns')
     return importance.T
 
 
-def get_most_important_frequency(most_important: dict):
-    freq = {}
-    most_important_values = np.array(most_important.values())
-    values, count = np.unique(most_important_values, return_counts=True)
-    for i, feature in enumerate(values):
-        if count[i] > 1:
-            freq[feature] = count[i]
+
+def get_most_important_frequency(most_important: pd.DataFrame, freq_threshold: int = 0):
+    freq = most_important.count()
+    freq = freq[freq > freq_threshold]
     return freq
+    # freq = {}
+    # most_important_values = np.array(most_important.values())
+    # values, count = np.unique(most_important_values, return_counts=True)
+    # for i, feature in enumerate(values):
+    #     if count[i] > freq_threshold:
+    #         freq[feature] = count[i]
+    # return freq
 
 
 def calc_abs_mean_shap(path: os.path, n: int = 5):

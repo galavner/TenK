@@ -32,6 +32,7 @@ from LabData.DataAnalyses.TenK_Trajectories.archive.defs import config, DATA_SET
 
 import GaussianMapping
 import LGBM
+import Loaders
 #
 
 os.chdir('/net/mraid08/export/genie/LabData/Analyses/galavner/Predictions/')
@@ -105,13 +106,14 @@ def normalize(X: pd.DataFrame):
     return X_normalized
     # scaler.transform(X_test)
 
+
 def XY_gen_f(x_df, y_col):
     X, Y = DataMerger(x_df, y_col).get_xy(y_col=y_col, inexact_index='Date')
     return f"BML {y_col}", X, Y, None, None
 
 
 def Xy_gen_fs():
-    base_path = "/net/mraid08/export/genie/LabData/Analyses/galavner/Predictions/X_SM_age_gender/"
+    base_path = "/net/mraid08/export/genie/LabData/Analyses/galavner/Predictions/SMAG_to_ECGText/"
 
     with qp(jobname='Gal_LGBM', _delete_csh_withnoerr=True, q=['himem7.q'], _trds_def=2, max_u=200,
                        _mem_def=2) as q:
@@ -129,9 +131,23 @@ def Xy_gen_fs():
         # ReIndex s.t. the index is now RegistrationCode, and not SerumName, and only the first value
         sm_df = sm_df.set_index(sm.df_metadata.RegistrationCode.drop_duplicates())
 
-        blood = BloodTestsLoader().get_data(study_ids='10K', groupby_reg='first', min_col_present=500,
-                                            norm_dist_capping={'sample_size_frac': 0.95, 'clip_sigmas': 5, 'remove_sigmas': 8})
-        blood_df = blood.df
+
+        # The following is to remove the '10K_' prefix to compare to the physical_activity data
+        # sm_df = sm_df.set_index(pd.to_numeric(sm.df_metadata.RegistrationCode.str[4:]).drop_duplicates())
+        #
+        # blood = BloodTestsLoader().get_data(study_ids='10K', groupby_reg='first', min_col_present=500,
+        #                                     norm_dist_capping={'sample_size_frac': 0.95, 'clip_sigmas': 5, 'remove_sigmas': 8})
+        # blood_df = blood.df
+
+        # gmbld_df = Loaders.get_GutMBLoader()
+
+        # phys_act = Loaders.get_physical_activity()
+
+        # abi = Loaders.get_ABILoader()
+        # abi_df = abi.df
+
+        ecgtext = Loaders.get_ECGTextLoader()
+        ecgtext_df = ecgtext.df
 
 
 
@@ -139,12 +155,15 @@ def Xy_gen_fs():
 
 
         x_df = sm_df
-        y_df = blood_df
+        x_df = x_df.set_index(sm.df_metadata.RegistrationCode.drop_duplicates())
+        y_df = ecgtext_df
 
         x_df = alter_categories(x_df)
         y_df = alter_categories(y_df)
 
         y_df.index = y_df.index.get_level_values('RegistrationCode')
+        x_df.index = x_df.index.get_level_values('RegistrationCode')
+
         # for y_df in df.columns:
 
         tkttores = {}
@@ -173,7 +192,7 @@ def Xy_gen_fs():
             # LGBM.LGBMPredict(x, y)
 
 
-            tkttores[(i, y_col)] = q.method(LGBM.LGBMPredict, (x, y))
+            tkttores[(i, y_col)] = q.method(LGBM.LGBMPredict, (x, y, base_path))
             indx.append(y_col)
 
             # time.sleep(120)
@@ -185,7 +204,7 @@ def Xy_gen_fs():
 
         results.to_csv(os.path.join(base_path, 'Results.csv'))
 
-        with open(os.path.join(base_path, 'Results_AG_pickle'), 'wb') as f:
+        with open(os.path.join(base_path, 'Results_SMAG_to_ECGText_pickle'), 'wb') as f:
             pickle.dump(results, f)
 
 

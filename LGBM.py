@@ -122,8 +122,8 @@ def save_files(x_train: pd.DataFrame, x_test: pd.DataFrame, y_train: pd.DataFram
 
 
 
-def LGBMPredict(x: DataFrame, y: DataFrame):
-    base_path = "/net/mraid08/export/genie/LabData/Analyses/galavner/Predictions/X_SM_age_gender"
+def LGBMPredict(x: DataFrame, y: DataFrame, base_path: os.path):
+    # base_path = "/net/mraid08/export/genie/LabData/Analyses/galavner/Predictions/AG_to_ABI"
     out_dir = os.path.join(base_path, y.name)
     if not os.path.exists(out_dir):
         os.makedirs(out_dir)
@@ -148,6 +148,6 @@ def LGBMPredict(x: DataFrame, y: DataFrame):
     plt.clf()
     shap.summary_plot(explainer.shap_values(x_test), x_test, show=False)
     plt.savefig('summary_plot.png', bbox_inches='tight')
-    print('finish')
+    print(f'finished {y.name} at {time.strftime("%H:%M:%S", time.localtime())}')
     return x_train, x_test, y_train, y_test, y_pred, model, results_dict
 
