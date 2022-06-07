@@ -37,7 +37,6 @@ def column_abs_mean(df: pd.DataFrame):
     return mean_df
 
 
-
 def get_n_important_features(mean_shap_calc: pd.DataFrame, n: int = 5):
     importance = pd.DataFrame()
     shap_t = mean_shap_calc.T
