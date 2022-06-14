@@ -5,12 +5,15 @@ import pandas as pd
 from pandas import DataFrame
 import numpy as np
 import matplotlib.pyplot as plt
+import seaborn as sns
 from sklearn import metrics
 from sklearn.metrics import r2_score, explained_variance_score, precision_recall_curve
 from sklearn.model_selection import RandomizedSearchCV, train_test_split
 from scipy.stats import pearsonr, spearmanr
 import shap
 import lightgbm as lgb
+import statistics
+import scipy.stats
 
 from LabData import config_global as config
 
@@ -53,6 +56,8 @@ hyper_params_dict_lg = \
         'silent': [True],
     }
 
+n_permutations = 1000
+
 
 def is_classification(y):
     if (y.unique().shape[0] == 2) and ((type(y.unique().max()) == str) |
@@ -87,7 +92,6 @@ def get_prediction(x: DataFrame, model: lgb.LGBMRegressor):
     return model.predict(x).ravel()
 
 
-
 def evaluate_performance(y_pred, y_test, classification_problem):
     results_dict = {}
     if classification_problem:
@@ -111,7 +115,8 @@ def evaluate_performance(y_pred, y_test, classification_problem):
 
 
 def save_files(x_train: pd.DataFrame, x_test: pd.DataFrame, y_train: pd.DataFrame, y_test: pd.DataFrame,
-               y_pred: pd.DataFrame, results_df: pd.DataFrame, model, out_dir):
+               y_pred: pd.DataFrame, results_df: pd.DataFrame, model,
+               perm_results: pd.DataFrame, is_signal: bool, out_dir):
     x_train.to_csv(os.path.join(out_dir, 'x_train.csv'))
     x_test.to_csv(os.path.join(out_dir, 'x_test.csv'))
     y_train.to_csv(os.path.join(out_dir, 'y_train.csv'))
@@ -119,7 +124,74 @@ def save_files(x_train: pd.DataFrame, x_test: pd.DataFrame, y_train: pd.DataFram
     y_pred.to_csv(os.path.join(out_dir, 'y_pred.csv'))
     results_df.to_csv(os.path.join(out_dir, 'results.csv'))
     model.booster_.save_model('LGBM_model.txt')
+    perm_results.to_csv(os.path.join(out_dir, f'Permutations_is_signal_{is_signal}'))
 
+
+def get_sample_pvalue_out_of_data(data: list, sample: float):
+    mu = statistics.mean(data)
+    sigma = statistics.stdev(data)
+    z = (sample - mu) / sigma
+    p = scipy.stats.norm.sf(z)
+    return mu, sigma, p
+
+
+def draw_permutation_distribution(data: list, real_point: float, basepath: os.path):
+    mu, sigma, p = get_sample_pvalue_out_of_data(data, real_point)
+    sns.histplot(data)
+    plt.annotate(f'pvalue={p}', xy=(0.05, 0.95), xycoords='axes fraction')
+    plt.axline((real_point, 0), (real_point, 1), linewidth=1, color='r', label='Real Pearson_r')
+    plt.savefig(os.path.join(basepath, 'permutation_histogram.png'), bbox_inches='tight')
+    return
+
+
+def permutations_test(x: DataFrame, y: DataFrame, classification_problem: bool, real_results_df, basepath: os.path):
+    better_perm_score_count = 0
+    is_signal = True
+    perm_results = []
+    if not classification_problem:
+        metric = 'pearson_r'
+    else:
+        metric = 'AUC'
+    for perm_iter in range(n_permutations):
+        x_perm = x
+        x_perm.index = np.random.permutation(x_perm.index)
+        results_dict = train_model(x_perm, y, classification_problem=classification_problem, is_permuted=True)
+        perm_results.append(results_dict[metric])
+        if real_results_df[metric][0] < results_dict[metric]:
+            better_perm_score_count = better_perm_score_count + 1
+        # if perm_iter > 0
+        #     mu, sigma, p = get_sample_pvalue_out_of_data(perm_results, real_results_df[metric][0])
+        #     sns.histplot(perm_results)
+        #     plt.annotate(f'pvalue={p}', xy=(0.05, 0.95), xycoords='axes fraction')
+        #     plt.show()
+        if perm_iter == 4 or perm_iter == 9:
+            if better_perm_score_count >= 3:
+                is_signal = False
+                # draw_permutation_distribution(perm_results, real_results_df[metric][0], basepath=basepath)
+                return is_signal, perm_results
+        if perm_iter == 99:
+            if better_perm_score_count >= 5:
+                is_signal = False
+                # draw_permutation_distribution(perm_results, real_results_df[metric][0], basepath=basepath)
+                return is_signal, perm_results
+        if perm_iter >= 99:
+            if better_perm_score_count/perm_iter > 0.06:
+                is_signal = False
+                return is_signal, perm_results
+    # draw_permutation_distribution(perm_results, real_results_df[metric][0], basepath=basepath)
+    return is_signal, perm_results
+
+
+def train_model(x: DataFrame, y: DataFrame, classification_problem: bool, is_permuted: bool = False):
+    x_train, x_test, y_train, y_test = train_test_split(x, y, test_size=0.2, random_state=0)
+    model = fit_hyper_params_search(x_train, y_train, classification_problem)
+    y_pred = get_prediction(x_test, model)
+    results_dict = evaluate_performance(y_pred, y_test, classification_problem)
+
+    if is_permuted:
+        return results_dict
+
+    return x_train, x_test, y_train, y_test, y_pred, model, results_dict
 
 
 def LGBMPredict(x: DataFrame, y: DataFrame, base_path: os.path):
@@ -132,23 +204,32 @@ def LGBMPredict(x: DataFrame, y: DataFrame, base_path: os.path):
     #         _trds_def=2, max_u=650) as q:
     #     q.startpermanentrun()
     classification_problem = is_classification(y)
-    x_train, x_test, y_train, y_test = train_test_split(x, y, test_size=0.2, random_state=0)
-    model = fit_hyper_params_search(x_train, y_train, classification_problem)
+    # x_train, x_test, y_train, y_test = train_test_split(x, y, test_size=0.2, random_state=0)
+    # model = fit_hyper_params_search(x_train, y_train, classification_problem)
     # model.booster_.save_model('LGBM_model.txt')
-    explainer = calc_shap(model, x_test)
-    y_pred = get_prediction(x_test, model)
-    results_dict = evaluate_performance(y_pred, y_test, classification_problem)
 
-
+    # y_pred = get_prediction(x_test, model)
+    # results_dict = evaluate_performance(y_pred, y_test, classification_problem)
+    x_train, x_test, y_train, y_test, y_pred, model, results_dict =\
+        train_model(x, y, classification_problem=classification_problem)
     y_train = pd.DataFrame(y_train, columns=[y.name], index=x_train.index)
     y_test = pd.DataFrame(y_test, columns=[y.name], index=x_test.index)
     y_pred = pd.DataFrame(y_pred, columns=[y.name], index=x_test.index)
     result_df = pd.DataFrame(results_dict, index=[y.name])
+    is_signal, permutations_results = permutations_test(x, y, classification_problem=classification_problem,
+                                                        real_results_df=result_df, basepath=out_dir)
+    perm_df = pd.DataFrame(permutations_results, columns=[y.name])
+    explainer = calc_shap(model, x_test)
+
+
     # result_df.to_csv(os.path.join(out_dir, 'results.csv'))
-    save_files(x_train, x_test, y_train, y_test, y_pred, result_df, model, out_dir)
+    save_files(x_train, x_test, y_train, y_test, y_pred, result_df, model, perm_df, is_signal, out_dir)
     plt.clf()
     shap.summary_plot(explainer.shap_values(x_test), x_test, show=False)
     plt.savefig('summary_plot.png', bbox_inches='tight')
+
+
+
     print(f'finished {y.name} at {time.strftime("%H:%M:%S", time.localtime())}')
-    return x_train, x_test, y_train, y_test, y_pred, model, results_dict
+    return x_train, x_test, y_train, y_test, y_pred, model, results_dict, permutations_results, is_signal
 
