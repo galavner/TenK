@@ -3,6 +3,7 @@ import os
 import numpy as np
 import pandas as pd
 
+# Should be changes to something more elegant, unnecessary
 feature_inx = {
     'gender': 0,
     'age': 1,
@@ -13,7 +14,10 @@ feature_inx = {
     'diabetes': 6
 }
 
+# The risk score function
 def _calculate_framingham_risk_score(row):
+
+    # Load the different parameters from the 'row' series, should be changed to something more elegant
     gender = row[feature_inx['gender']]
     age = row[feature_inx['age']]
     total_cholesterol = row[feature_inx['chol']]

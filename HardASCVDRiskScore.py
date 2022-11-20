@@ -2,6 +2,7 @@ import math
 
 import pandas as pd
 
+# The actual function that calculates the risk score
 def compute_ten_year_score(
     isMale,
     isBlack,
@@ -13,6 +14,7 @@ def compute_ten_year_score(
     totalCholesterol,
     hdl,
 ):
+
     """
     Args:
         isMale (bool)
@@ -25,8 +27,12 @@ def compute_ten_year_score(
         totalCholesterol (int)
         hdl (int)
     """
+
+    # Only valid to certain age range
     if age < 40 or age > 79:
         return None
+
+    # Features processing according to paper, taking the log
     lnAge = math.log(age)
     lnTotalChol = math.log(totalCholesterol)
     lnHdl = math.log(hdl)
@@ -37,6 +43,9 @@ def compute_ten_year_score(
     agetSbp = lnAge * trlnsbp
     agentSbp = lnAge * ntlnsbp
     ageSmoke = lnAge if smoker else 0
+
+    #Different calculations according to sex and race
+
     if isBlack and not isMale:
         s010Ret = 0.95334
         mnxbRet = 86.6081
@@ -52,6 +61,7 @@ def compute_ten_year_score(
             + (0.6908 if smoker else 0)
             + (0.8738 if diabetic else 0)
         )
+
     elif not isBlack and not isMale:
         s010Ret = 0.96652
         mnxbRet = -29.1817
@@ -68,6 +78,7 @@ def compute_ten_year_score(
             + -1.665 * ageSmoke
             + (0.661 if diabetic else 0)
         )
+
     elif isBlack and isMale:
         s010Ret = 0.89536
         mnxbRet = 19.5425
@@ -80,6 +91,7 @@ def compute_ten_year_score(
             + (0.549 if smoker else 0)
             + (0.645 if diabetic else 0)
         )
+
     else:
         s010Ret = 0.91436
         mnxbRet = 61.1816
@@ -96,10 +108,12 @@ def compute_ten_year_score(
             + (0.658 if diabetic else 0)
         )
 
+    # The risk score formula
     pct = 1 - s010Ret ** math.exp(predictRet - mnxbRet)
     return round(pct * 100 * 10) / 10
 
 
+# This is a wrapping function of the actual calculation of the risk score, can be changed to something more elegant
 def HardASCVDRiskScore(ser:pd.Series, age_ind: int, gender_ind: int, smoker_ind: int,
                        systolicBloodPressure_ind: int, totalCholesterol_ind: int, hdl_ind: int,
                        isBlack_ind: int = None, hypertensive_ind: int = None, diabetic_ind: int = None
