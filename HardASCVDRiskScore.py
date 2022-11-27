@@ -128,5 +128,9 @@ def HardASCVDRiskScore(ser:pd.Series, age_ind: int, gender_ind: int, smoker_ind:
     diabetic = ser[diabetic_ind] if diabetic_ind is not None else False
     isBlack = ser[isBlack_ind] if isBlack_ind is not None else False
 
-    return 0.01 * compute_ten_year_score(isMale, isBlack, smoker, hypertensive, diabetic, age,
+    score = compute_ten_year_score(isMale, isBlack, smoker, hypertensive, diabetic, age,
                                   systolicBloodPressure, totalCholesterol, hdl)
+
+    score = 0.01 * score
+
+    return score

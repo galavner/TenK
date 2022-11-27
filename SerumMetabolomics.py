@@ -33,6 +33,7 @@ from LabData.DataAnalyses.TenK_Trajectories.archive.defs import config, DATA_SET
 import GaussianMapping
 import LGBM
 import Loaders
+import config_local as cl
 #
 
 os.chdir('/net/mraid08/export/genie/LabData/Analyses/galavner/Predictions/')
@@ -113,10 +114,10 @@ def XY_gen_f(x_df, y_col):
 
 
 def Xy_gen_fs():
-    base_path = "/net/mraid08/export/genie/LabData/Analyses/galavner/Predictions/SMAG_to_ECGText/"
+    base_path = "/net/mraid08/export/genie/LabData/Analyses/galavner/Predictions/SM_to_RiskScores/"
 
-    with qp(jobname='Gal_LGBM', _delete_csh_withnoerr=True, q=['himem7.q'], _trds_def=2, max_u=200,
-                       _mem_def=2) as q:
+    with qp(jobname='Gal_LGBM', _delete_csh_withnoerr=True, q=['himem7.q'], _trds_def=2, max_u=500,
+                       _mem_def=6) as q:
         q.startpermanentrun()
 
         sm = SerumMetabolomicsLoader().get_data(study_ids='10K', groupby_reg='first', min_col_present=500,
@@ -125,8 +126,8 @@ def Xy_gen_fs():
         sm_df = sm.df
         ag_df = sm.df_metadata[['gender', 'age']]
 
-        sm_df['age'] = ag_df['age']
-        sm_df['gender'] = ag_df['gender']
+        # sm_df['age'] = ag_df['age']
+        # sm_df['gender'] = ag_df['gender']
 
         # ReIndex s.t. the index is now RegistrationCode, and not SerumName, and only the first value
         sm_df = sm_df.set_index(sm.df_metadata.RegistrationCode.drop_duplicates())
@@ -134,7 +135,7 @@ def Xy_gen_fs():
 
         # The following is to remove the '10K_' prefix to compare to the physical_activity data
         # sm_df = sm_df.set_index(pd.to_numeric(sm.df_metadata.RegistrationCode.str[4:]).drop_duplicates())
-        #
+
         # blood = BloodTestsLoader().get_data(study_ids='10K', groupby_reg='first', min_col_present=500,
         #                                     norm_dist_capping={'sample_size_frac': 0.95, 'clip_sigmas': 5, 'remove_sigmas': 8})
         # blood_df = blood.df
@@ -146,8 +147,11 @@ def Xy_gen_fs():
         # abi = Loaders.get_ABILoader()
         # abi_df = abi.df
 
-        ecgtext = Loaders.get_ECGTextLoader()
-        ecgtext_df = ecgtext.df
+        # ecgtext = Loaders.get_ECGTextLoader()
+        # ecgtext_df = ecgtext.df
+
+        muscle_mass_indices = cl.load_pickle(os.path.join(cl.DB_PATH, 'RiskScores', 'muscle_mass_indices.pickle'))
+        adiposity_indices = cl.load_pickle(os.path.join(cl.DB_PATH, 'RiskScores', 'adiposity_indices.pickle'))
 
 
 
@@ -155,14 +159,15 @@ def Xy_gen_fs():
 
 
         x_df = sm_df
-        x_df = x_df.set_index(sm.df_metadata.RegistrationCode.drop_duplicates())
-        y_df = ecgtext_df
+        # x_df = x_df.set_index(sm.df_metadata.RegistrationCode.drop_duplicates())
+        y_df = pd.concat([adiposity_indices, muscle_mass_indices], axis=1)
 
         x_df = alter_categories(x_df)
         y_df = alter_categories(y_df)
+        # y_df['gender'] = phys_act['gender']
 
-        y_df.index = y_df.index.get_level_values('RegistrationCode')
-        x_df.index = x_df.index.get_level_values('RegistrationCode')
+        # y_df.index = y_df.index.get_level_values('RegistrationCode')
+        # x_df.index = x_df.index.get_level_values('RegistrationCode')
 
         # for y_df in df.columns:
 
@@ -182,7 +187,7 @@ def Xy_gen_fs():
             # X = df_filtered.loc[:, df_filtered.columns != y_col]
             # Y = df_filtered.loc[:, y_col]
 
-            if x.shape[0] < 1000:
+            if x.shape[0] < 500:
                 continue
 
 
@@ -198,12 +203,13 @@ def Xy_gen_fs():
         tkttores = {k: q.waitforresult(v) for k, v in tkttores.items()}
 
         results = pd.DataFrame(tkttores).T
-        results.columns = ['x_train', 'x_test', 'y_train', 'y_test', 'y_pred', 'model', 'results_dict']
+        results.columns = ['x_train', 'x_test', 'y_train', 'y_test', 'y_pred', 'model',
+                           'results_dict', 'permutation_results', 'is_signal']
         results.index = indx
 
         results.to_csv(os.path.join(base_path, 'Results.csv'))
 
-        with open(os.path.join(base_path, 'Results_SMAG_to_ECGText_pickle'), 'wb') as f:
+        with open(os.path.join(base_path, 'Results_SM_to_PA_pickle'), 'wb') as f:
             pickle.dump(results, f)
 
 

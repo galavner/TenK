@@ -5,6 +5,7 @@
 
 import os
 import sys
+import time
 import warnings
 
 
@@ -18,19 +19,26 @@ from sklearn import preprocessing
 
 # from LabData.DataLoaders.Loader import Loader
 from LabData.DataLoaders.BodyMeasuresLoader import BodyMeasuresLoader
+from LabData.DataLoaders.BloodTestsLoader import BloodTestsLoader
 from LabData.DataMergers.DataMerger import DataMerger
 from LabData.DataPredictors.DataPredictors import DataPredictor
 from LabData.DataPredictors.PredictorParams import PredictorParams
 from LabUtils.addloglevels import sethandlers
 from LabUtils.Utils import mkdirifnotexists
+from LabQueue.qp import qp, fakeqp
 from LabData.DataAnalyses.TenK_Trajectories.archive.defs import config, DATA_SETS, MAIN_PREDS_DIR, SCREEN_BASELINE
 
+
+import GaussianMapping
+import LGBM
 #
 # def load_filter_data():
 #     df = BodyMeasuresLoader().get_data(study_ids='10K', groupby_reg='first').df # Get only first appointment of 10K
 #     df = df.select_dtype(include = np.number) # Take only numerical values for now
 #
 
+os.chdir('/net/mraid08/export/genie/LabData/Analyses/galavner/Predictions/')
+sethandlers()
 
 def print_hi(name):
     # Use a breakpoint in the code line below to debug your script.
@@ -43,7 +51,7 @@ def alter_categories(df: pd.DataFrame):
     res = df[[c for c
         in list(df)
         if (len(df[c].unique()) - 1 > 10 or len(df[c].unique()) - 1 == 2)]]
-    res = pd.get_dummies(res, dummy_na=False, drop_first=True)
+    # res = pd.get_dummies(res, dummy_na=False, drop_first=True)
 
     # nuniques = df.nunique(axis = 0, dropna = True)
     # for feature in nuniques.items():
@@ -83,61 +91,101 @@ def remove_nan_rows(df : pd.DataFrame ):
     return x
 
 
-def remove_outliers(df : pd.DataFrame):
-#     remove all rows with features valued outside x /sigma
-    return df[(np.abs(stats.zscore(df, axis = 1, nan_policy = 'omit')) < 5).all(axis = 1)]
+# def remove_outliers(df : pd.DataFrame):
+# #     remove all rows with features valued outside x /sigma
+#     return df[(np.abs(stats.zscore(df, axis = 1, nan_policy = 'omit')) < 5).all(axis = 1)]
 
 
-def impute_data(X_train, X_test):
-    imputer = KNNImputer(n_neighbors = 5)
-    imputer.fit_transform(X_train)
-    imputer.transform(X_test)
+# def impute_data(X_train, X_test):
+#     train_columns = X_train.columns
+#     test_columns = X_test.columns
+#     imputer = KNNImputer(n_neighbors = 5)
+#     train_data = imputer.fit_transform(X_train)
+#     test_data = imputer.transform(X_test)
+#     train_imputed = pd.DataFrame(train_data, columns=train_columns)
+#     test_imputed = pd.DataFrame(test_data, test_columns)
+#     return train_imputed, test_imputed
 
 
-def normalize (X):
+
+def normalize(X: pd.DataFrame):
     scaler = preprocessing.StandardScaler()
-    scaler.fit_transform(X)
+    X_normalized = pd.DataFrame(scaler.fit_transform(X), index=X.index, columns=X.columns)
+    return X_normalized
     # scaler.transform(X_test)
 
 def XY_gen_f(x_df, y_col):
-    X , Y = DataMerger(x_df, y_col).get_xy(y_col = y_col, inexact_index='Date')
+    X, Y = DataMerger(x_df, y_col).get_xy(y_col=y_col, inexact_index='Date')
     return f"BML {y_col}", X, Y, None, None
 
 
 # Press the green button in the gutter to run the script.
 def Xy_gen_fs():
+    db_path = "/net/mraid08/export/genie/LabData/Analyses/galavner/DB"
     # Load only 10K cohort with only first appointment patients
-    df = BodyMeasuresLoader().get_data(study_ids='10K', groupby_reg='first', min_col_present = 500).df
+    body = BodyMeasuresLoader().get_data(study_ids='10K', groupby_reg='first', min_col_present=500,
+                                         norm_dist_capping={'sample_size_frac': 0.95, 'clip_sigmas': 5, 'remove_sigmas': 8}).df
+    blood = BloodTestsLoader().get_data(study_ids='10K', groupby_reg='first', min_col_present=500,
+                                        norm_dist_capping={'sample_size_frac': 0.95, 'clip_sigmas': 5, 'remove_sigmas': 8}).df
+
+    body = body.droplevel(level=1)
+    blood = blood.droplevel(level=1)
+
+    df = pd.merge(blood, body, right_index=True, left_index=True)
 
     df = alter_categories(df)
-    for y in df.columns:
+    # for y in df.columns:
+    # with qp(jobname='Gal_LGBM', _delete_csh_withnoerr=True, q=['himem7.q'], _trds_def=2, max_u=200,
+    #                    _mem_def=2) as q:
+    #     q.startpermanentrun()
+    #     tkttores = {}
+    for i, y in enumerate(['bt__egfr']):
         df_filtered, num_of_patients = get_relevant_patients_per_outcome(df, y)
         df_filtered = remove_nan_columns(df_filtered)
-        df_filtered = remove_outliers(df_filtered)
+        # df_filtered = remove_outliers(df_filtered)
         # it shouldn't matter if it's done before train-test split as it randomly assigns them to each group
 
         X = df_filtered.loc[:, df_filtered.columns != y]
         Y = df_filtered.loc[:, y]
 
+        if X.shape[0] < 500:
+            continue
+
+
+
         # X_train, X_test, y_train, y_test = train_test_split(X, Y, test_size = 0.2, random_state = 0)
 
         # Before imputing the data, it might be a nice to see if they are missing at random or not
-        # impute_data(X_train, X_test)
+        # X_train, X_test = impute_data(X_train, X_test)
 
 
-        normalize(X)
+        # X = normalize(X)
 
-        yield lambda: XY_gen_f(X, y)
+        LGBM.LGBMPredict(X, Y)
+
+
+        # tkttores[(i,0)] = qp.method(q, LGBM.LGBMPredict, (X, Y))
+
+        time.sleep(120)
+
+
+
+
+    # X.to_csv(os.path.join(db_path, f'features {y}.csv'))
+    # Y.to_csv(os.path.join(db_path, f'results {y}.csv'))
+
+    # yield lambda: XY_gen_f(X, y)
 
 
 def main():
-    # sethandlers(file_dir=config.log_dir)
-    sethandlers()
-    y_col = 'waist'
-    # analysis_dir = '/net/mraid08/export/genie/LabData/Tom'
-    analysis_dir = '/net/mraid08/export/genie/LabData/Analyses/galavner'
-    res = DataPredictor(PredictorParams('--predictor_type XGBRegressor --num_cv_folds 3')).predict_multi(Xy_gen_fs,work_dir=analysis_dir)
-    print(res)
+    Xy_gen_fs()
+    print('Done')
+    # # sethandlers(file_dir=config.log_dir)
+    # y_col = 'waist'
+    # # analysis_dir = '/net/mraid08/export/genie/LabData/Tom'
+    # analysis_dir = '/net/mraid08/export/genie/LabData/Analyses/galavner'
+    # res = DataPredictor(PredictorParams('--predictor_type XGBRegressor --num_cv_folds 3')).predict_multi(Xy_gen_fs,work_dir=analysis_dir)
+    # print(res)
 
 if __name__ == '__main__':
     main()

@@ -1,6 +1,7 @@
 import os
 import time
 
+import pickle
 import pandas as pd
 from pandas import DataFrame
 import numpy as np
@@ -15,6 +16,7 @@ import lightgbm as lgb
 import statistics
 import scipy.stats
 
+import config_local as cl
 from LabData import config_global as config
 
 # LightGBM
@@ -56,7 +58,7 @@ hyper_params_dict_lg = \
         'silent': [True],
     }
 
-n_permutations = 1000
+n_permutations = 100
 
 
 def is_classification(y):
@@ -66,10 +68,12 @@ def is_classification(y):
     return False
 
 
-def fit_hyper_params_search(x, y, classification_problem):
+def fit_hyper_params_search(x, y, classification_problem, is_unbalance: bool = False):
     if classification_problem:
         lgb_model = lgb.LGBMClassifier()
         hyper_params_dict_lg['objective'] = ['binary']
+        if is_unbalance:
+            hyper_params_dict_lg['is_unbalance'] = [True]
     else:
         lgb_model = lgb.LGBMRegressor()
 
@@ -107,7 +111,7 @@ def evaluate_performance(y_pred, y_test, classification_problem):
             'Coefficient_of_determination': r2_score(y_true=y_test, y_pred=y_pred),
             'explained_variance_score': explained_variance_score(y_true=y_test, y_pred=y_pred),
             'pearson_r': pearsonr(y_pred, y_test)[0],
-            'pearson_p_value': pearsonr(y_pred,y_test)[1],
+            'pearson_p_value': pearsonr(y_pred, y_test)[1],
             'spearman_r': spearmanr(y_pred, y_test)[0],
             'spearman_p_value': spearmanr(y_pred, y_test)[1]
         }
@@ -116,7 +120,7 @@ def evaluate_performance(y_pred, y_test, classification_problem):
 
 def save_files(x_train: pd.DataFrame, x_test: pd.DataFrame, y_train: pd.DataFrame, y_test: pd.DataFrame,
                y_pred: pd.DataFrame, results_df: pd.DataFrame, model,
-               perm_results: pd.DataFrame, is_signal: bool, out_dir):
+               perm_results: pd.DataFrame, is_signal: bool, out_dir, y_col):
     x_train.to_csv(os.path.join(out_dir, 'x_train.csv'))
     x_test.to_csv(os.path.join(out_dir, 'x_test.csv'))
     y_train.to_csv(os.path.join(out_dir, 'y_train.csv'))
@@ -125,6 +129,31 @@ def save_files(x_train: pd.DataFrame, x_test: pd.DataFrame, y_train: pd.DataFram
     results_df.to_csv(os.path.join(out_dir, 'results.csv'))
     model.booster_.save_model('LGBM_model.txt')
     perm_results.to_csv(os.path.join(out_dir, f'Permutations_is_signal_{is_signal}'))
+
+    # combined_dict = {
+    #     'x_train': x_train,
+    #     'x_test': x_test,
+    #     'y_train': y_train,
+    #     'y_test': y_test,
+    #     'y_pred': y_pred,
+    #     'model': model,
+    #     'results_df': results_df,
+    #     'perm_results': perm_results
+    # }
+    # combined_df = DataFrame(combined_dict, index=y_col)
+
+    cl.save_pickle(x_train, out_dir, 'x_train.pickle')
+    cl.save_pickle(x_test, out_dir, 'x_test.pickle')
+    cl.save_pickle(y_train, out_dir, 'y_train.pickle')
+    cl.save_pickle(y_test, out_dir, 'y_test.pickle')
+    cl.save_pickle(y_pred, out_dir, 'y_pred.pickle')
+    cl.save_pickle(results_df, out_dir, 'results.pickle')
+    cl.save_pickle(perm_results, out_dir, f'Permutations_is_signal_{is_signal}.pickle')
+    cl.save_pickle(model, out_dir, 'Model.pickle')
+
+    # cl.save_pickle(combined_df, out_dir, 'combined_df.pickle')
+
+    # model.booster_.save_model('LGBM_model.txt')
 
 
 def get_sample_pvalue_out_of_data(data: list, sample: float):
@@ -144,19 +173,36 @@ def draw_permutation_distribution(data: list, real_point: float, basepath: os.pa
     return
 
 
-def permutations_test(x: DataFrame, y: DataFrame, classification_problem: bool, real_results_df, basepath: os.path):
+def permutations_test(x_train: DataFrame, x_test: DataFrame, y_train: DataFrame, y_test: DataFrame,
+                      classification_problem: bool, real_results_df, basepath: os.path,
+                      do_permutations: bool = True, is_unbalance: bool = False):
+
+    if not do_permutations:
+        return None, None
+
     better_perm_score_count = 0
     is_signal = True
-    perm_results = []
+    perm_results = [] #{}
     if not classification_problem:
         metric = 'pearson_r'
     else:
         metric = 'AUC'
+
+    if real_results_df[metric][0] < 0:
+        is_signal = False
+        return is_signal, perm_results
     for perm_iter in range(n_permutations):
-        x_perm = x
+        x_perm = x_train.copy()
         x_perm.index = np.random.permutation(x_perm.index)
-        results_dict = train_model(x_perm, y, classification_problem=classification_problem, is_permuted=True)
+        x_perm = x_perm.sample(frac=1)
+        results_dict = train_model(x_perm, x_test, y_train, y_test, classification_problem=classification_problem,
+                                   is_permuted=True, is_unbalance=is_unbalance)
         perm_results.append(results_dict[metric])
+        # for k, v in results_dict.items():
+        #     if perm_iter == 0:
+        #         perm_results[k] = [v]
+        #     else:
+        #         perm_results[k].append(v)
         if real_results_df[metric][0] < results_dict[metric]:
             better_perm_score_count = better_perm_score_count + 1
         # if perm_iter > 0
@@ -182,19 +228,20 @@ def permutations_test(x: DataFrame, y: DataFrame, classification_problem: bool, 
     return is_signal, perm_results
 
 
-def train_model(x: DataFrame, y: DataFrame, classification_problem: bool, is_permuted: bool = False):
-    x_train, x_test, y_train, y_test = train_test_split(x, y, test_size=0.2, random_state=0)
-    model = fit_hyper_params_search(x_train, y_train, classification_problem)
+def train_model(x_train: DataFrame, x_test: DataFrame, y_train: DataFrame, y_test: DataFrame,
+                classification_problem: bool, is_permuted: bool = False, is_unbalance: bool=False):
+    # x_train, x_test, y_train, y_test = train_test_split(x, y, test_size=0.2, random_state=0)
+    model = fit_hyper_params_search(x_train, y_train, classification_problem, is_unbalance=is_unbalance)
     y_pred = get_prediction(x_test, model)
     results_dict = evaluate_performance(y_pred, y_test, classification_problem)
 
     if is_permuted:
         return results_dict
 
-    return x_train, x_test, y_train, y_test, y_pred, model, results_dict
+    return y_pred, model, results_dict
 
 
-def LGBMPredict(x: DataFrame, y: DataFrame, base_path: os.path):
+def LGBMPredict(x: DataFrame, y: DataFrame, base_path: os.path, do_permutations: bool = False, is_unbalance: bool = False):
     # base_path = "/net/mraid08/export/genie/LabData/Analyses/galavner/Predictions/AG_to_ABI"
     out_dir = os.path.join(base_path, y.name)
     if not os.path.exists(out_dir):
@@ -204,26 +251,28 @@ def LGBMPredict(x: DataFrame, y: DataFrame, base_path: os.path):
     #         _trds_def=2, max_u=650) as q:
     #     q.startpermanentrun()
     classification_problem = is_classification(y)
-    # x_train, x_test, y_train, y_test = train_test_split(x, y, test_size=0.2, random_state=0)
+    x_train, x_test, y_train, y_test = train_test_split(x, y, test_size=0.2, random_state=0)
     # model = fit_hyper_params_search(x_train, y_train, classification_problem)
     # model.booster_.save_model('LGBM_model.txt')
 
     # y_pred = get_prediction(x_test, model)
     # results_dict = evaluate_performance(y_pred, y_test, classification_problem)
-    x_train, x_test, y_train, y_test, y_pred, model, results_dict =\
-        train_model(x, y, classification_problem=classification_problem)
+    y_pred, model, results_dict =\
+        train_model(x_train, x_test, y_train, y_test, classification_problem=classification_problem, is_unbalance=is_unbalance)
     y_train = pd.DataFrame(y_train, columns=[y.name], index=x_train.index)
     y_test = pd.DataFrame(y_test, columns=[y.name], index=x_test.index)
     y_pred = pd.DataFrame(y_pred, columns=[y.name], index=x_test.index)
     result_df = pd.DataFrame(results_dict, index=[y.name])
-    is_signal, permutations_results = permutations_test(x, y, classification_problem=classification_problem,
-                                                        real_results_df=result_df, basepath=out_dir)
+    is_signal, permutations_results = permutations_test(x_train, x_test, y_train, y_test,
+                                                        classification_problem=classification_problem,
+                                                        real_results_df=result_df, basepath=out_dir,
+                                                        do_permutations=do_permutations, is_unbalance=is_unbalance)
     perm_df = pd.DataFrame(permutations_results, columns=[y.name])
     explainer = calc_shap(model, x_test)
 
 
     # result_df.to_csv(os.path.join(out_dir, 'results.csv'))
-    save_files(x_train, x_test, y_train, y_test, y_pred, result_df, model, perm_df, is_signal, out_dir)
+    save_files(x_train, x_test, y_train, y_test, y_pred, result_df, model, perm_df, is_signal, out_dir, y.name)
     plt.clf()
     shap.summary_plot(explainer.shap_values(x_test), x_test, show=False)
     plt.savefig('summary_plot.png', bbox_inches='tight')

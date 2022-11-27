@@ -1,10 +1,14 @@
 import warnings
 
+import os
+
 import numpy as np
 import pandas as pd
+from matplotlib import pyplot as plt
 
 from scipy.stats import shapiro
 from sklearn.preprocessing import PowerTransformer, QuantileTransformer, FunctionTransformer
+
 
 def power_transfom(feature_train: pd.Series, feature_test: pd.Series):
     pt_yj = PowerTransformer('yeo-johnson')
@@ -31,7 +35,6 @@ def power_transfom(feature_train: pd.Series, feature_test: pd.Series):
 
 
 def log_transform(feature_train: pd.Series, feature_test: pd.Series):
-
     lt = FunctionTransformer(np.log1p, validate=True)
 
     train_log = lt.transform(feature_train)
@@ -40,7 +43,6 @@ def log_transform(feature_train: pd.Series, feature_test: pd.Series):
     sw_log = shapiro(train_log)
 
     return sw_log, train_log, test_log
-
 
 
 def best_transformer(feature_train: pd.Series, feature_test: pd.Series, alpha):
@@ -59,40 +61,20 @@ def best_transformer(feature_train: pd.Series, feature_test: pd.Series, alpha):
     return feature_train, feature_test
 
 
-
-
-def make_gaussian(x_train: pd.DataFrame, x_test: pd.DataFrame, y_train: pd.Series, y_test: pd.Series, alpha: float64):
+def make_gaussian(x_train: pd.DataFrame, x_test: pd.DataFrame, y_train: pd.Series, y_test: pd.Series, alpha: float):
     x_train_transformed = x_train
     x_test_transformed = x_test
     y_train_transformed = y_train
     y_test_transformed = y_test
 
-
     for feature in x_train.columns:
         if shapiro(x_train[feature]) > alpha:
             continue
 
-        x_train_transformed[feature], x_test_transformed[feature] = best_transformer(x_train[feature], x_test[feature], alpha)
+        x_train_transformed[feature], x_test_transformed[feature] = best_transformer(
+            x_train[feature], x_test[feature], alpha)
 
     if not (shapiro(y_train) > alpha):
         y_train_transformed, y_test_transformed = best_transformer(y_train, y_test, alpha)
 
     return x_train_transformed, x_test_transformed, y_train_transformed, y_test_transformed
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-

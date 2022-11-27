@@ -8,41 +8,41 @@ import pandas as pd
 import matplotlib.pyplot as plt
 import seaborn as sns
 
-
-class ResultAnalysis:
-    def __init__(self, path: os.path):
-        self.path = path
-        self.pickle_file = load_pickle(path)
-        self.metrics = None
-        self.pearson_r
-        self.shap_vals = None
-        self.shap_freq = None
-
-    def set_metrics(self, columns_to_flatten: str = None):
-        metrics_tmp = self.pickle_file.results_df
-        metrics_tmp = self._flatten_dicts_to_columns(self, column_to_flatten=columns_to_flatten)
-        self.metrics = metrics_tmp
-
-
-    def get_metrics(self):
-        return self.metrics
-
-    def get_pearson_r(self):
-        if self.metrics is None:
-            self.set_metrics(self)
-        self.pearson_r = self.metrics.pearson_r
-        return self.pearson_r
-
-
-    def _flatten_dicts_to_columns(df: pd.DataFrame or pd.Series, **column_to_flatten: str = None):
-        # The json_normalize does not keep the indices
-        df_temp = df
-        if column_to_flatten is not None:
-            df = pd.json_normalize(data=df[column_to_flatten].to_list())
-        else:
-            df = pd.json_normalize(data=df.tolist())
-        df.index = df_temp.index
-        return df
+#
+# class ResultAnalysis:
+#     def __init__(self, path: os.path):
+#         self.path = path
+#         self.pickle_file = load_pickle(path)
+#         self.metrics = None
+#         self.pearson_r
+#         self.shap_vals = None
+#         self.shap_freq = None
+#
+#     def set_metrics(self, columns_to_flatten: str = None):
+#         metrics_tmp = self.pickle_file.results_df
+#         metrics_tmp = self._flatten_dicts_to_columns(self, column_to_flatten=columns_to_flatten)
+#         self.metrics = metrics_tmp
+#
+#
+#     def get_metrics(self):
+#         return self.metrics
+#
+#     def get_pearson_r(self):
+#         if self.metrics is None:
+#             self.set_metrics(self)
+#         self.pearson_r = self.metrics.pearson_r
+#         return self.pearson_r
+#
+#
+#     def _flatten_dicts_to_columns(df: pd.DataFrame or pd.Series, **column_to_flatten: str = None):
+#         # The json_normalize does not keep the indices
+#         df_temp = df
+#         if column_to_flatten is not None:
+#             df = pd.json_normalize(data=df[column_to_flatten].to_list())
+#         else:
+#             df = pd.json_normalize(data=df.tolist())
+#         df.index = df_temp.index
+#         return df
 
 
 def load_csv(path: os.path):

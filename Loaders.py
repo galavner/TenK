@@ -16,13 +16,18 @@ def set_index_to_registration_code(loader):
     return loader_df
 
 
+def remove_date_index_and_nans(df: pd.DataFrame):
+    return df.droplevel(['Date']).dropna()
 
-def get_BodyMeasuresLoaderDF():
+
+def get_BodyMeasuresLoaderDF(index_as_registration_code: bool = True):
     from LabData.DataLoaders.BodyMeasuresLoader import BodyMeasuresLoader
     body = BodyMeasuresLoader().get_data(study_ids='10K', groupby_reg='first', min_col_present=500,
                                      norm_dist_capping={'sample_size_frac': 0.95, 'clip_sigmas': 5,
                                                         'remove_sigmas': 8})
-    return body
+    # body_df = fix_indices(body, index_as_registration_code=index_as_registration_code)
+    body_df = body.df.droplevel(['Date'])
+    return body_df
 
 
 def get_BloodTestsLoaderDF():
@@ -39,9 +44,9 @@ def get_SerumMetabolomicsLoader(index_as_registration_code: bool = True):
                                                 norm_dist_capping={'sample_size_frac': 0.95, 'clip_sigmas': 5, 'remove_sigmas': 8}
                                             , precomputed_loader_fname='metab_10k_data_RT_clustering')
     sm_df = fix_indices(sm, index_as_registration_code)
+
+
     return sm_df
-
-
 
 
 def get_GutMBLoader(index_as_registration_code: bool = True):
@@ -54,7 +59,7 @@ def get_GutMBLoader(index_as_registration_code: bool = True):
 
 
 def get_physical_activity():
-    phys_act = pd.read_csv('/net/mraid08/export/genie/LabData/Analyses/galavner/DB/physical_activity.csv')
+    phys_act = pd.read_csv('/net/mraid08/export/genie/LabData/Analyses/galavner/DB/PA_mobile.csv')
     phys_act.index = phys_act.participant_id
     phys_act = phys_act.drop(columns=['participant_id', phys_act.columns[0]])
     return phys_act
@@ -75,3 +80,26 @@ def get_ECGTextLoader():
                                                 'remove_sigmas': 8})
     return ecg
 
+
+def get_DEXALoader():
+    from LabData.DataLoaders.DEXALoader import DEXALoader
+
+    dxald = DEXALoader().get_data(study_ids='10K', groupby_reg='first', min_col_present=500,
+                                  norm_dist_capping={'sample_size_frac': 0.95, 'clip_sigmas': 5,
+                                                     'remove_sigmas': 8})
+
+    return dxald
+
+
+def get_SubjectLoader(get_only_ag:bool = True):
+    from LabData.DataLoaders.SubjectLoader import SubjectLoader
+
+    sbjld = SubjectLoader().get_data(study_ids='10K', groupby_reg='first')
+    sbjdf = sbjld.df
+
+    if get_only_ag:
+        ag = sbjdf[['age', 'gender']]
+        ag = remove_date_index_and_nans(ag)
+        return ag
+
+    return sbjdf
